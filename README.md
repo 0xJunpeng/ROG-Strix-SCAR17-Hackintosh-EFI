@@ -39,11 +39,48 @@ ctrsmt=full -ibtcompatbeta revpatch=sbvmm nvfb=1 nvaccel=1 nvfbheads=4
 nvrmacpibl=1
 ```
 
+## ⚠️ 三码配置（使用前必读）
+
+本仓库的 `config.plist` 中 **SMBIOS 三码已置为占位符**，直接使用会导致 iCloud / iMessage / App Store 无法登录（严重时被 Apple 锁定账号）。请务必替换为你自己的三码：
+
+| 字段（`PlatformInfo > Generic`） | 当前值 | 说明 |
+|---|---|---|
+| `SystemSerialNumber` | `REPLACE-ME-SERIAL` | 机器序列号（12 位） |
+| `MLB` | `REPLACE-ME-MLB` | 主板序列号（17 位） |
+| `SystemUUID` | `00000000-0000-0000-0000-000000000000` | 系统 UUID（36 位，带连字符） |
+| `ROM` | `112233445566` | 网卡 MAC 地址（6 字节） |
+| `SystemProductName` | `MacBookPro16,2` | **保持不动**（与本 EFI 的 CPU 电源管理、核显配置绑定） |
+
+### 方法一：GenSMBIOS（推荐）
+
+```bash
+git clone https://github.com/corpnewt/GenSMBIOS
+cd GenSMBIOS && chmod +x GenSMBIOS.command && ./GenSMBIOS.command
+```
+
+1. 选 `3. Generate SMBIOS`（部分版本是 `2`）
+2. 机型输入 **`MacBookPro16,2`**（必须与 `SystemProductName` 一致）
+3. 输出形如 `MacBookPro16,2 | C02XXXXXXXXXX | C02XXXXXXXXXXXXXXX | ...`，依次对应 **Serial | MLB**
+4. `SystemUUID` 用 `uuidgen` 生成即可：终端执行 `uuidgen`
+5. `ROM` 取本机网卡 MAC 去掉冒号（终端 `ifconfig en0 | grep ether`），或随意填 6 字节十六进制
+
+### 方法二：OCAT（图形化）
+
+OpenCore Auxiliary Tools → 打开 `config.plist` → 左侧 `PlatformInfo` → 点 **Generate** 按钮（机型选 MacBookPro16,2）→ 自动填充 Serial / MLB / UUID / ROM → 保存。
+
+### 替换后的检查
+
+- 三码必须**成对使用**（Serial 与 MLB 要来自同一次生成，不能混用）
+- 改完务必**只保留你自己的三码**，不要提交回本仓库或公开分享
+- 首次登录 iCloud 前先在「系统设置」里确认序列号已生效（`系统报告 → 硬件`）
+
+
 ## 使用说明
 
-1. ⚠️ **config.plist 中的 SMBIOS 序列号 / MLB / UUID / ROM 已脱敏**（替换为 `REMOVED-FOR-PRIVACY`）。使用前请用 [GenSMBIOS](https://github.com/corpnewt/GenSMBIOS) 生成自己的序列号填入 `PlatformInfo > Generic`。
-2. EFI 放到分区（ESP）的 `EFI/OC/` 目录。
-3. 独显传感器需要本仓库提到的 SMCNvidiaGPU.kext（已包含在 Kexts 里）。
+1. 按上一节替换三码（必做）。
+2. 把 `EFI` 文件夹放到 ESP 分区的根目录（`EFI/OC/`）。
+3. 本 EFI 内的 `SMCNvidiaGPU.kext` 依赖 [NullMoth NVIDIA 驱动](https://github.com/nullmoth/nvidia-macos-driver) 2.8.1，驱动版本不同需重新生成绑定表。
+
 
 ## 已知限制
 
