@@ -51,7 +51,27 @@ nvrmacpibl=1
 | `ROM` | `112233445566` | 网卡 MAC 地址（6 字节） |
 | `SystemProductName` | `MacBookPro16,2` | **保持不动**（与本 EFI 的 CPU 电源管理、核显配置绑定） |
 
-### 方法一：GenSMBIOS（推荐）
+### 方法一：仓库自带脚本（推荐，最快）
+
+仓库内附 `tools/gen-three-codes.sh`，用 Acidanthera 官方 `macserial` 生成合法的 Serial / MLB 配对，并可直接写入 config.plist：
+
+```bash
+# 只生成看结果（不修改任何文件）
+./tools/gen-three-codes.sh
+
+# 生成 3 组备选
+./tools/gen-three-codes.sh -n 3
+
+# 生成并直接写入 config.plist（自动备份原文件）
+./tools/gen-three-codes.sh --apply EFI/OC/config.plist
+
+# 指定机型 / 手动指定 ROM
+./tools/gen-three-codes.sh -m MacBookPro16,2 --rom A1B2C3D4E5F6
+```
+
+首次运行会自动从 OpenCore 官方 Release 下载 `macserial` 并缓存到 `~/Library/Caches/smbios-gen/`（约 10 MB，仅一次）。脚本会保留 `SystemProductName` 不变，UUID 用 `uuidgen` 生成，ROM 默认取 `en0` 的 MAC。
+
+### 方法二：GenSMBIOS（手动）
 
 ```bash
 git clone https://github.com/corpnewt/GenSMBIOS
@@ -64,7 +84,7 @@ cd GenSMBIOS && chmod +x GenSMBIOS.command && ./GenSMBIOS.command
 4. `SystemUUID` 用 `uuidgen` 生成即可：终端执行 `uuidgen`
 5. `ROM` 取本机网卡 MAC 去掉冒号（终端 `ifconfig en0 | grep ether`），或随意填 6 字节十六进制
 
-### 方法二：OCAT（图形化）
+### 方法三：OCAT（图形化）
 
 OpenCore Auxiliary Tools → 打开 `config.plist` → 左侧 `PlatformInfo` → 点 **Generate** 按钮（机型选 MacBookPro16,2）→ 自动填充 Serial / MLB / UUID / ROM → 保存。
 
