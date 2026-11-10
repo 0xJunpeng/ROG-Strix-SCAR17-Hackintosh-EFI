@@ -124,9 +124,46 @@ OpenCore Auxiliary Tools → 打开 `config.plist` → 左侧 `PlatformInfo` →
 3. 本 EFI 内的 `SMCNvidiaGPU.kext` 依赖 [NullMoth NVIDIA 驱动](https://github.com/nullmoth/nvidia-macos-driver) 2.8.1，驱动版本不同需重新生成绑定表。
 
 
+## 风扇转速（EC 探针）
+
+这台机器在 macOS 下**出厂就没有风扇数据源**：NVIDIA 驱动报 `kern.nvgpufancount = 0`（笔记本显卡不上报风扇），
+VirtualSMC 的 `FNum = 0`（系统 SMC 里没有风扇键），DSDT 里也没有标准的 `Device (FAN0)` / `_FST`。
+所以 iStat Menus 和菜单栏程序读到的风扇值都是 0。
+
+不过数据其实在 EC RAM 里，可以直接读。`tools/fan-probe/` 是一个只读探针，用来验证并读取它：
+
+```bash
+cd tools/fan-probe
+./build.sh                  # 需要 Command Line Tools
+sudo ./inject-oc.sh         # 注入 OpenCore（改 config.plist，自动备份）
+# 重启后
+./check.sh                  # 读结果；回滚用 sudo ./check.sh --off
+```
+
+实测输出：
+
+```
+"nvfanprobe" = "FA1=3000 FA2=0x0BF4(3060) ..."     → 风扇1 3000 RPM，风扇2 3060 RPM
+```
+
+数据源（来自反编译的 DSDT）：
+
+```asl
+OperationRegion (IT55, SystemMemory, 0xFE700600, 0x100)
+    FA1L @ +0x02, FA1H @ +0x03     // 风扇 1
+    FA2L @ +0x24, FA2H @ +0x25     // 风扇 2
+```
+
+细节、原理和适配其他机型的方法见 [`tools/fan-probe/README.md`](tools/fan-probe/README.md)。
+探针本身**只读不写**，也不注册 SMC 键——要让转速出现在 iStat Menus 里，还需要再写一个 VirtualSMC
+插件把它发布成 `FNum` / `F0Ac`。
+
 ## 已知限制
 
-- 笔记本风扇由 EC 控制，显卡不上报转速（菜单栏程序自动回退读系统 SMC 风扇）
+- 风扇转速需要上面的 EC 探针才能读到；不装探针时 iStat Menus 显示 0（不是故障）
+- `SMCNvidiaGPU.kext` 的绑定表与 NVIDIA 驱动版本严格对应。本仓库的 kext 针对 **NVRM 2.8.1** 编译；驱动升级后
+  `sysctl kern.nvgpustate` 会显示 `matches none of the N known builds`，所有读数变 0。处理方式：用
+  `kext/nvrm_bindings.py` 按新驱动重新生成绑定表再 `kext/build.sh` 重编（作者提供的标准流程），或回退驱动版本
 - NVIDIA 独显无法读取电压和 VBIOS 版本（驱动层限制）
 
 ## 致谢
