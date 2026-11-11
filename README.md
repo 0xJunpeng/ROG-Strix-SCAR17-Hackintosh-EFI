@@ -29,6 +29,20 @@
 - WhateverXe（核显）、NVMeFix、USBToolBox + UTBDefault
 - CpuTscSync + CpuTopologyRebuild（Alder Lake 混合架构核心调度）
 - RestrictEvents、AMFIPass（NVIDIA 驱动所需）
+- **NvFanProbe 0.3**（自研，见下文）
+
+## 🌡️ 自研传感器驱动：NvFanProbe
+
+macOS Tahoe 26 起，`AppleSMC` 的用户态私有接口对第三方进程一律返回 `kIOReturnBadArgument`，且 `SMCProcessor` 在本机不会实例化 —— CPU 温度在用户态彻底拿不到。
+
+**NvFanProbe.kext**（`EFI/OC/Kexts/`，源码在 `tools/NvFanProbe/`）在内核层直接读 MSR：
+
+- `IA32_TEMPERATURE_TARGET`（0x1A2）取 TjMax
+- `IA32_PACKAGE_THERM_STATUS`（0x1B1，失败时退到核心级 0x19C）计算封装温度
+- 每秒刷新，以 IORegistry 属性 `CPUTempC` 发布，用户态无需 root 读取
+
+配套控制台 App（菜单栏监控 + 驱动中心，驱动中心里可离线一键安装本 kext）：
+[0xJunpeng/ROG-Control-Center](https://github.com/0xJunpeng/ROG-Control-Center)
 
 ## 关键 boot-args
 
