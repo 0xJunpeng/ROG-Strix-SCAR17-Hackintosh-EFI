@@ -9,8 +9,9 @@
 | CPU | Intel Core i9-12900H（Alder Lake） | ✅ 完整支持 |
 | GPU | NVIDIA GeForce RTX 3060 Laptop GPU（GA106） | ✅ Metal 4，含传感器监控 |
 | 核显 | Intel Iris Xe（UHD Graphics） | ✅ 驱动显示输出 |
-| 无线网卡 | Intel Wi-Fi 6（AirportItlwm + itlwm 备用） | ✅ |
-| 蓝牙 | Intel（IntelBluetoothFirmware + BlueToolFixup） | ✅ |
+| 无线网卡 | Intel Wi-Fi 6E AX211（ForbiddenItlwm 0.5.3-test1） | ✅ 含 AWDL |
+| 蓝牙 | Intel（IntelBluetoothFirmware + BlueToolFixup + BTLEAdvFixup） | ✅ |
+| 隔空投送 | AWDL（ForbiddenItlwm） | ⚠️ 仅接收方向可用，见下文 |
 | 触控板 | I2C HID（VoodooI2C + VoodooI2CHID） | ✅ |
 
 ## 软件版本
@@ -24,12 +25,13 @@
 
 - Lilu、VirtualSMC 全家桶（SMCProcessor / SMCSuperIO / SMCBatteryManager / SMCLightSensor）
 - **SMCNvidiaGPU**（NVIDIA GPU 传感器，VirtualSMC 插件）
-- AirportItlwm（Wi-Fi）、IntelBluetoothFirmware + BlueToolFixup + IntelBTPatcher（蓝牙）
+- **ForbiddenItlwm**（Wi-Fi + AWDL 隔空投送）、**BTLEAdvFixup**（蓝牙 LE 广播钩子）
+- IntelBluetoothFirmware + BlueToolFixup（蓝牙）；**IntelBTPatcher 必须保持禁用**（与 ForbiddenItlwm 冲突）
 - VoodooI2C / VoodooI2CHID（触控板）、VoodooPS2Controller（键盘）
 - WhateverXe（核显）、NVMeFix、USBToolBox + UTBDefault
 - CpuTscSync + CpuTopologyRebuild（Alder Lake 混合架构核心调度）
 - RestrictEvents、AMFIPass（NVIDIA 驱动所需）
-- **NvFanProbe 0.3**（自研，见下文）
+- **NvFanProbe 0.4**（自研，CPU 温度，见下文）
 
 ## 🌡️ 自研传感器驱动：NvFanProbe
 
@@ -52,6 +54,43 @@ ctrsmt=full -ibtcompatbeta revpatch=sbvmm nvfb=1 nvaccel=1 nvfbheads=4
 -nvkmsnosmooth amfi_get_out_of_my_way=0x1 amfi=0x80 ipc_control_port_options=0
 nvrmacpibl=1
 ```
+
+以下为 ForbiddenItlwm 0.5.3 的 AWDL / 隔空投送调试开关（与本机实测配套，改动前请先读驱动仓库的
+[TROUBLESHOOTING](https://github.com/retropineaple/ForbiddenItlwm/blob/main/docs/TROUBLESHOOTING.md)）：
+
+```
+-btleadv -itlawdlcoexprobe -itlawdliface -itlawdlnativeup -itlawdlcoexrx
+-itlawdlcoextx -itlawdlcoexmulti -itlawdlcoexdata -itlawdlmitx -itlawdlelicit
+-itlawdlcaps -itlawdlsvcmerge -itlawdlawsync itlawdlintcoal=4 -itlawdlcoexbatx
+-itlawdlcoexpeerpause -itlawdlcoexbatrace itlawdltxqueue=4096
+-itlawdlbaaskshared -itlawdlhideinfra
+```
+
+## 无线网卡与隔空投送
+
+驱动栈：**ForbiddenItlwm 0.5.3-test1**（AirportItlwm 的 AWDL 分支）+ **BTLEAdvFixup 0.9.0** +
+IntelBluetoothFirmware 2.5.3 + BlueToolFixup 2.7.3。**IntelBTPatcher 必须禁用**，否则 BLE 广播会被抢走。
+
+实测状态（Intel AX211）：
+
+| 项目 | 结果 |
+|---|---|
+| Wi-Fi 联网 | ✅ 802.11ac，5GHz ch36 / 80MHz，实测 260 Mbps 协商速率 |
+| 隔空投送接收（iPhone/iPad → Mac） | ✅ 正常 |
+| 隔空投送发送（Mac → iPhone/iPad） | ❌ 会话建立不起来 |
+| 接力 / iMessage | ✅ |
+
+**为什么发不出去**（已定位，非配置错误）：AirDrop 只能用 iPhone 射频时间里「它自己 Wi-Fi 剩下的部分」。
+关键计数器 `ITLAWDLCoexPeerPresentEntries` 只有 2~5（健康值 11~15），因为 iPhone 同时连着同一个 ch36 网络，
+射频大部分时间在服务它自己的连接。连带现象是 `ITLAWDLCoexBaAsksSkippedAway` 持续增长（请求撞在 iPhone
+不在监听信道的时刻被跳过），而 `BaTxStateName = agreed` 说明 block ack 本身是通的。
+
+源码里的判断条件是 `sharedPrimary = (当前 BSS 信道 == AWDL 信道)`，本机 Wi-Fi 在 ch36、AWDL 固定在 ch149，
+所以永远走不到共享路径。**若要修好，唯一办法是把 5GHz 主网络放到 149**（80MHz 覆盖 149-161），让两者同信道。
+
+> 本仓库的 boot-args 已经带上 `-itlawdlbaaskshared -itlawdlhideinfra`（0.5.3 专为「Mac 发不出去」加的开关），
+> 它们在跨信道时不会生效，也没有副作用，可以原样保留。
+
 
 ## ⚠️ 三码配置（使用前必读）
 
@@ -174,6 +213,10 @@ OperationRegion (IT55, SystemMemory, 0xFE700600, 0x100)
 
 ## 已知限制
 
+- **隔空投送只能收、不能发**：原因与解决方向见上文「无线网卡与隔空投送」，属于 iPhone 侧射频时隙配额问题，
+  与网卡驱动配置无关。临时绕过：让 iPhone 关掉 Wi-Fi（走蜂窝、蓝牙保持开启）再让 Mac 发送
+- **开机到 Apple logo 这一段偏慢**：`kern.boottime` 之后 macOS 侧只需约 7 秒（内核 → WindowServer 5 秒），
+  耗时在固件 POST + OpenCore + boot.efi 注入 32 个 kext；OpenCore 为 DBG-109 调试构建（官方尚未发布同版本 RELEASE）
 - 风扇转速需要上面的 EC 探针才能读到；不装探针时 iStat Menus 显示 0（不是故障）
 - `SMCNvidiaGPU.kext` 的绑定表与 NVIDIA 驱动版本严格对应。本仓库的 kext 针对 **NVRM 2.8.1** 编译；驱动升级后
   `sysctl kern.nvgpustate` 会显示 `matches none of the N known builds`，所有读数变 0。处理方式：用
@@ -184,4 +227,5 @@ OperationRegion (IT55, SystemMemory, 0xFE700600, 0x100)
 
 - [OpenCorePkg](https://github.com/acidanthera/OpenCorePkg)、[Lilu](https://github.com/acidanthera/Lilu)、[VirtualSMC](https://github.com/acidanthera/VirtualSMC)
 - [nullmoth/nvidia-macos-driver](https://github.com/nullmoth/nvidia-macos-driver)、[zzzyy678/SMCNvidiaGPU](https://github.com/zzzyy678/SMCNvidiaGPU)
+- [retropineaple/ForbiddenItlwm](https://github.com/retropineaple/ForbiddenItlwm)（AWDL / 隔空投送分支）
 - 黑苹果社区所有人的踩坑记录
